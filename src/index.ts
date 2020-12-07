@@ -143,7 +143,6 @@ export class MondayRedisService extends BaseConnector {
     update: Promise<any>,
   ) {
     const change = this.getChangeKey(itemId, title)
-    console.log(change)
     return Promise.all([update, this.redis.append(this.changesKey, change)])
   }
 
@@ -194,11 +193,8 @@ export class MondayRedisService extends BaseConnector {
               this.serialize(value, columnTitle),
             )
             const currentChanges = await this.redis.get(this.changesKey)
-            console.log('currentChanges', currentChanges)
             const changeKey = this.getChangeKey(itemId, columnTitle)
-            console.log('changeKey',changeKey)
             await this.redis.set(this.changesKey, currentChanges.replace(changeKey, ''))
-            console.log('this.changesKey',currentChanges.replace(changeKey, ''))
             this.app.getLogger().info(`Redis - value updated (previous: ${redisCurrentValueDeserialized}, new: ${value}) for itemId ${itemId} (title: ${columnTitle})`)
           }
         }
