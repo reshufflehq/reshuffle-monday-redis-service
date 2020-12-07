@@ -6,11 +6,17 @@ import { Cipher } from './Cipher'
 type MondayItem = Record<string, any>
 type MondayBoardItems = Record<string, MondayItem>
 
+const INVALIDATED = 'INVALIDATED'
+
+const MONDAY_SYNC_TIMER_MS = process.env.MONDAY_SYNC_TIMER_MS
+  ? parseInt(process.env.MONDAY_SYNC_TIMER_MS || '', 10)
+  : 5000
+
 interface Options {
   boardName: string
   monday: MondayConnector
   redis: RedisConnector
-  encryptionKey?: string,
+  encryptionKey?: string
   encryptedColumnList?: string[]
 }
 
@@ -20,10 +26,10 @@ export class MondayRedisService extends BaseConnector {
   public readonly redis: RedisConnector
 
   private boardId?: number
-  private keyBase: string
-  private namesKey: string
-  private changesKey: string
-  private cipher?: Cipher
+  private readonly keyBase: string
+  private readonly namesKey: string
+  private readonly changesKey: string
+  private readonly cipher?: Cipher
   private encryptedColumns: Record<string, boolean> = {}
 
   constructor(app: Reshuffle, options: Options, id?: string) {
@@ -67,12 +73,12 @@ export class MondayRedisService extends BaseConnector {
       this.cipher = new Cipher(options.encryptionKey)
     }
 
-    setInterval(() => this.destageChances(), 5000)
+    setInterval(() => this.destageChanges(), MONDAY_SYNC_TIMER_MS)
   }
 
   // Interval ///////////////////////////////////////////////////////
 
-  private async destageChances() {
+  private async destageChanges() {
     const changes = await this.redis.getset(this.changesKey, '')
     if (changes) {
       await Promise.all((changes as string)
@@ -80,7 +86,7 @@ export class MondayRedisService extends BaseConnector {
         .slice(1)
         .sort()
         .filter((e, i, a) => i === a.indexOf(e)) // unique
-        .map(change => {
+        .map((change) => {
           const [itemId, title] = change.split(':')
           return this.destageOneChange(itemId, decodeURIComponent(title))
         })
@@ -91,11 +97,13 @@ export class MondayRedisService extends BaseConnector {
   private async destageOneChange(itemId: string, title: string) {
     const serial = await this.redis.hget(this.keyForItem(itemId), title)
     const value = this.deserialize(serial, title)
-    await this.monday.updateColumnValues(
-      await this.getBoardId(),
-      itemId,
-      { [title]: () => value }
-    )
+    if (value !== INVALIDATED) {
+      await this.monday.updateColumnValues(
+        await this.getBoardId(),
+        itemId,
+        { [title]: () => value }
+      )
+    }
   }
 
   // Helpers ////////////////////////////////////////////////////////
@@ -137,18 +145,17 @@ export class MondayRedisService extends BaseConnector {
     update: Promise<any>,
   ) {
     const change = ` ${itemId}:${encodeURIComponent(title)}`
-    return Promise.all([ update, this.redis.append(this.changesKey, change)])
+    return Promise.all([update, this.redis.append(this.changesKey, change)])
   }
 
   // Actions ////////////////////////////////////////////////////////
 
   // Initialize the Redis mirror for this board.
-  //
   public async initialize() {
-    console.log(`Initializing ${this.boardName} board`)
+    this.app.getLogger().info(`Initializing ${this.boardName} board`)
     const initialized = await this.redis.setnx(this.changesKey, '')
     if (initialized === 1) {
-      console.log(`Populating Redis mirror for ${this.boardName}`)
+      this.app.getLogger().info(`Populating Redis mirror for ${this.boardName}`)
       const items = await this.getMondayBoardItems()
       await Promise.all(
         Object.values(items).map((item) => ([
@@ -159,11 +166,40 @@ export class MondayRedisService extends BaseConnector {
               this.serialize(item[title], title),
             )
           ),
-          this.redis.hset(this.namesKey, item.name, item.id)
+          this.redis.hset(this.namesKey, item.name, item.id),
         ]))
-        .flat()
+          .flat()
       )
     }
+
+    this.boardId = await this.getBoardId()
+    this.monday.on(
+      {
+        type: 'ChangeColumnValue',
+        boardId: this.boardId,
+      },
+      async (event) => {
+        const { boardId, itemId, columnTitle, value: { value } } = event
+        if (this.boardId === parseInt(boardId, 10)) {
+          const redisCurrentValue = await this.redis.hget(
+            this.keyForItem(itemId),
+            columnTitle,
+          )
+          const redisCurrentValueDeserialized = this.deserialize(redisCurrentValue, columnTitle)
+
+          if (redisCurrentValueDeserialized !== value) {
+            await this.redis.hset(
+              this.keyForItem(itemId),
+              columnTitle,
+              this.serialize(INVALIDATED, columnTitle),
+            )
+
+            this.app.getLogger().info(`Monday event received - Redis cache invalidated for itemId ${itemId} (title: ${columnTitle})`)
+          }
+        }
+      },
+    )
+
     return this
   }
 
@@ -222,9 +258,9 @@ export class MondayRedisService extends BaseConnector {
   // The new value is atomically written to the Redis mirror, and will
   // eventually be synchronized back to Monday. This assures updates
   // are atomic and reduces load on Monday, as multiple updates to the
-  // same column are consolidated befor Monday is updated.
+  // same column are consolidated before Monday is updated.
   //
-  // The new value is encrypted if neccessary before caching.
+  // The new value is encrypted if necessary before caching.
   //
   // @param itemId id of the Monday item to be updated
   // @param title title of the Monday column to be updated
@@ -240,20 +276,32 @@ export class MondayRedisService extends BaseConnector {
     )
   }
 
-  // Increase (or descrease) the value for one column of a specific
+  // Increase (or decrease) the value for one column of a specific
   // item. The column must have a numeric value and must not be
   // encrypted.
   //
   // The new value is atomically written to the Redis mirror, and will
   // eventually be synchronized back to Monday. This assures updates
   // are atomic and reduces load on Monday, as multiple updates to the
-  // same column are consolidated befor Monday is updated.
+  // same column are consolidated before Monday is updated.
   //
   // @param itemId id of the Monday item to be updated
   // @param title title of the Monday column to be updated
   // @param incr numeric increment (negative to decrement)
   //
   public async incrColumnValue(itemId: string, title: string, incr = 1) {
+    const currentValue = await this.redis.hget(this.keyForItem(itemId), title)
+    const currentValueDeserialized = this.deserialize(currentValue, title)
+
+    if (currentValueDeserialized === INVALIDATED) {
+      this.app.getLogger().info(`Value (itemId: ${itemId}, title: ${title}) had been invalidated by a Monday event.`)
+      const data = await this.monday.getBoardItems(await this.getBoardId())
+      const newValue = data?.items[itemId][title]
+      await this.setColumnValue(itemId, title, newValue)
+
+      this.app.getLogger().info(`Resync Redis cache with Monday for itemId ${itemId} (title ${title}) with ${newValue}.`)
+    }
+
     await this.updateColumnValue(itemId, title,
       this.redis.hincrby(this.keyForItem(itemId), title, incr),
     )
