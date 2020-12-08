@@ -74,7 +74,7 @@ export class MondayRedisService extends BaseConnector {
 
   // Interval ///////////////////////////////////////////////////////
 
-  private async destageChanges() {
+  private async destageChanges(skipItemId?: string) {
     const changes = await this.redis.getset(this.changesKey, '')
     if (changes) {
       await Promise.all((changes as string)
@@ -84,7 +84,9 @@ export class MondayRedisService extends BaseConnector {
         .filter((e, i, a) => i === a.indexOf(e)) // unique
         .map((change) => {
           const [itemId, title] = change.split(':')
-          return this.destageOneChange(itemId, decodeURIComponent(title))
+          if (skipItemId !== itemId) {
+            return this.destageOneChange(itemId, decodeURIComponent(title))
+          }
         })
       )
     }
@@ -179,25 +181,13 @@ export class MondayRedisService extends BaseConnector {
       async (event) => {
         const { boardId, itemId, columnTitle, value: { value } } = event
         if (this.boardId === parseInt(boardId, 10)) {
-          // const redisCurrentValue = await this.redis.hget(
-          //   this.keyForItem(itemId),
-          //   columnTitle,
-          // )
-          // const redisCurrentValueDeserialized = this.deserialize(redisCurrentValue, columnTitle)
-
-          // if (redisCurrentValueDeserialized !== value) {
-          this.app.getLogger().info(`Monday event received - Redis/Monday values differ for itemId ${itemId} (title: ${columnTitle})`)
+          this.app.getLogger().info(`Monday event received - Update Redis cache with ${value} for itemId ${itemId} (title: ${columnTitle})`)
           await this.redis.hset(
             this.keyForItem(itemId),
             columnTitle,
             this.serialize(value, columnTitle),
           )
-          await this.destageChanges()
-            // const currentChanges = await this.redis.get(this.changesKey)
-            // const changeKey = this.getChangeKey(itemId, columnTitle)
-            // await this.redis.set(this.changesKey, currentChanges.replace(changeKey, ''))
-            // this.app.getLogger().info(`Redis - value updated (previous: ${redisCurrentValueDeserialized}, new: ${value}) for itemId ${itemId} (title: ${columnTitle})`)
-          // }
+          await this.destageChanges(columnTitle)
         }
       },
     )
