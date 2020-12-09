@@ -44,25 +44,18 @@ export class MondayRedisService extends BaseConnector {
     }
     this.monday = options.monday
 
-    if (
-      typeof options.redis !== 'object' ||
-      options.redis.constructor.name !== 'RedisConnector'
-    ) {
+    if (typeof options.redis !== 'object' || options.redis.constructor.name !== 'RedisConnector') {
       throw new Error(`Not a redis connector: ${options.redis}`)
     }
     this.redis = options.redis
 
-    if (
-      options.encryptionKey !== undefined &&
-      options.encryptedColumnList !== undefined
-    ) {
+    if (options.encryptionKey !== undefined && options.encryptedColumnList !== undefined) {
       if (!Array.isArray(options.encryptedColumnList)) {
         throw new Error(`Invalid column list: ${options.encryptedColumnList}`)
       }
       for (const title of options.encryptedColumnList) {
         if (typeof title !== 'string' || title.trim().length === 0) {
-          throw new Error(
-            `Invalid column list: ${options.encryptedColumnList}`)
+          throw new Error(`Invalid column list: ${options.encryptedColumnList}`)
         }
         this.encryptedColumns[title] = true
       }
@@ -77,17 +70,18 @@ export class MondayRedisService extends BaseConnector {
   private async destageChanges(skipItemId?: string) {
     const changes = await this.redis.getset(this.changesKey, '')
     if (changes) {
-      await Promise.all((changes as string)
-        .split(' ')
-        .slice(1)
-        .sort()
-        .filter((e, i, a) => i === a.indexOf(e)) // unique
-        .map((change) => {
-          const [itemId, title] = change.split(':')
-          if (skipItemId !== itemId) {
-            return this.destageOneChange(itemId, decodeURIComponent(title))
-          }
-        })
+      await Promise.all(
+        (changes as string)
+          .split(' ')
+          .slice(1)
+          .sort()
+          .filter((e, i, a) => i === a.indexOf(e)) // unique
+          .map((change) => {
+            const [itemId, title] = change.split(':')
+            if (skipItemId !== itemId) {
+              return this.destageOneChange(itemId, decodeURIComponent(title))
+            }
+          }),
       )
     }
   }
@@ -95,11 +89,9 @@ export class MondayRedisService extends BaseConnector {
   private async destageOneChange(itemId: string, title: string) {
     const serial = await this.redis.hget(this.keyForItem(itemId), title)
     const value = this.deserialize(serial, title)
-    await this.monday.updateColumnValues(
-      await this.getBoardId(),
-      itemId,
-      { [title]: () => value }
-    )
+    await this.monday.updateColumnValues(await this.getBoardId(), itemId, {
+      [title]: () => value,
+    })
   }
 
   // Helpers ////////////////////////////////////////////////////////
@@ -139,11 +131,7 @@ export class MondayRedisService extends BaseConnector {
     return ` ${itemId}:${encodeURIComponent(title)}`
   }
 
-  private async updateColumnValue(
-    itemId: string,
-    title: string,
-    update: Promise<any>,
-  ) {
+  private async updateColumnValue(itemId: string, title: string, update: Promise<any>) {
     const change = this.getChangeKey(itemId, title)
     return Promise.all([update, this.redis.append(this.changesKey, change)])
   }
@@ -158,17 +146,14 @@ export class MondayRedisService extends BaseConnector {
       this.app.getLogger().info(`Populating Redis mirror for ${this.boardName}`)
       const items = await this.getMondayBoardItems()
       await Promise.all(
-        Object.values(items).map((item) => ([
-          ...Object.keys(item).map((title) =>
-            this.redis.hset(
-              this.keyForItem(item.id),
-              title,
-              this.serialize(item[title], title),
-            )
-          ),
-          this.redis.hset(this.namesKey, item.name, item.id),
-        ]))
-          .flat()
+        Object.values(items)
+          .map((item) => [
+            ...Object.keys(item).map((title) =>
+              this.redis.hset(this.keyForItem(item.id), title, this.serialize(item[title], title)),
+            ),
+            this.redis.hset(this.namesKey, item.name, item.id),
+          ])
+          .flat(),
       )
     }
 
@@ -179,9 +164,18 @@ export class MondayRedisService extends BaseConnector {
         boardId: this.boardId,
       },
       async (event) => {
-        const { boardId, itemId, columnTitle, value: { value } } = event
+        const {
+          boardId,
+          itemId,
+          columnTitle,
+          value: { value },
+        } = event
         if (this.boardId === parseInt(boardId, 10)) {
-          this.app.getLogger().info(`Monday event received - Update Redis cache with ${value} for itemId ${itemId} (title: ${columnTitle})`)
+          this.app
+            .getLogger()
+            .info(
+              `Monday event received - Update Redis cache with ${value} for itemId ${itemId} (title: ${columnTitle})`,
+            )
           await this.redis.hset(
             this.keyForItem(itemId),
             columnTitle,
@@ -259,12 +253,10 @@ export class MondayRedisService extends BaseConnector {
   // @param value new value
   //
   public async setColumnValue(itemId: string, title: string, value: any) {
-    await this.updateColumnValue(itemId, title,
-      this.redis.hset(
-        this.keyForItem(itemId),
-        title,
-        this.serialize(value, title),
-      ),
+    await this.updateColumnValue(
+      itemId,
+      title,
+      this.redis.hset(this.keyForItem(itemId), title, this.serialize(value, title)),
     )
   }
 
@@ -282,7 +274,9 @@ export class MondayRedisService extends BaseConnector {
   // @param incr numeric increment (negative to decrement)
   //
   public async incrColumnValue(itemId: string, title: string, incr = 1) {
-    await this.updateColumnValue(itemId, title,
+    await this.updateColumnValue(
+      itemId,
+      title,
       this.redis.hincrby(this.keyForItem(itemId), title, incr),
     )
   }
