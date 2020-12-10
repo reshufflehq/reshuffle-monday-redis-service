@@ -74,8 +74,10 @@ export class MondayRedisService extends BaseConnector {
     setInterval(() => this.destageChanges(), MONDAY_SYNC_TIMER_MS)
   }
 
+  // Interval ///////////////////////////////////////////////////////
+
   private getChangeKey(itemId: string, title: string) {
-    return ` ${itemId}:${encodeURIComponent(title)}`
+    return `${itemId}:${encodeURIComponent(title)}`
   }
 
   private async destageChanges(skipChangeKey?: string) {
@@ -87,7 +89,7 @@ export class MondayRedisService extends BaseConnector {
           .slice(1)
           .sort()
           .filter((e, i, a) => i === a.indexOf(e)) // unique
-          .filter((v) => v !== skipChangeKey) // Don't process if changeKey equals skipChangeKey
+          .filter((e) => e !== skipChangeKey) // Skip skipChangeKey
           .map((change) => {
             const [itemId, title] = change.split(':')
             return this.destageOneChange(itemId, decodeURIComponent(title))
@@ -143,7 +145,10 @@ export class MondayRedisService extends BaseConnector {
     update: Promise<any>,
   ) {
     const change = this.getChangeKey(itemId, title)
-    return Promise.all([update, this.redis.append(this.changesKey, change)])
+    return Promise.all([
+      update,
+      this.redis.append(' ' + this.changesKey, change),
+    ])
   }
 
   // Actions ////////////////////////////////////////////////////////
@@ -195,9 +200,7 @@ export class MondayRedisService extends BaseConnector {
             columnTitle,
             this.serialize(value, columnTitle),
           )
-          await this.destageChanges(
-            this.getChangeKey(itemId, columnTitle).trim(),
-          )
+          await this.destageChanges(this.getChangeKey(itemId, columnTitle))
         }
       },
     )
