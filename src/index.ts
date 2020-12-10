@@ -87,7 +87,7 @@ export class MondayRedisService extends BaseConnector {
           .slice(1)
           .sort()
           .filter((e, i, a) => i === a.indexOf(e)) // unique
-          .filter((v) => v !== skipChangeKey)
+          .filter((v) => v !== skipChangeKey) // Don't process if changeKey equals skipChangeKey
           .map((change) => {
             const [itemId, title] = change.split(':')
             return this.destageOneChange(itemId, decodeURIComponent(title))
