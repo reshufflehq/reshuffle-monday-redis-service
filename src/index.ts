@@ -181,7 +181,7 @@ export class MondayRedisService extends BaseConnector {
             columnTitle,
             this.serialize(value, columnTitle),
           )
-          await this.destageChanges(columnTitle)
+          await this.destageChanges(itemId)
         }
       },
     )
