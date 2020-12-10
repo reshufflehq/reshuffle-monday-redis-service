@@ -4,7 +4,9 @@ import crypto from 'crypto'
 //
 export class Cipher {
   private static readonly KEY_LENGTH = 32
-  private static readonly keyRegex = new RegExp(`^[0-9a-fA-F]{${Cipher.KEY_LENGTH * 2}}$`)
+  private static readonly keyRegex = new RegExp(
+    `^[0-9a-fA-F]{${Cipher.KEY_LENGTH * 2}}$`,
+  )
 
   private key: Buffer
 

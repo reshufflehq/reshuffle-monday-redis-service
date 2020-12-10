@@ -6,7 +6,10 @@ import { Cipher } from './Cipher'
 type MondayItem = Record<string, any>
 type MondayBoardItems = Record<string, MondayItem>
 
-const MONDAY_SYNC_TIMER_MS = parseInt(process.env.MONDAY_SYNC_TIMER_MS || '5000', 10)
+const MONDAY_SYNC_TIMER_MS = parseInt(
+  process.env.MONDAY_SYNC_TIMER_MS || '5000',
+  10,
+)
 
 interface Options {
   boardName: string
@@ -44,12 +47,18 @@ export class MondayRedisService extends BaseConnector {
     }
     this.monday = options.monday
 
-    if (typeof options.redis !== 'object' || options.redis.constructor.name !== 'RedisConnector') {
+    if (
+      typeof options.redis !== 'object' ||
+      options.redis.constructor.name !== 'RedisConnector'
+    ) {
       throw new Error(`Not a redis connector: ${options.redis}`)
     }
     this.redis = options.redis
 
-    if (options.encryptionKey !== undefined && options.encryptedColumnList !== undefined) {
+    if (
+      options.encryptionKey !== undefined &&
+      options.encryptedColumnList !== undefined
+    ) {
       if (!Array.isArray(options.encryptedColumnList)) {
         throw new Error(`Invalid column list: ${options.encryptedColumnList}`)
       }
@@ -65,9 +74,11 @@ export class MondayRedisService extends BaseConnector {
     setInterval(() => this.destageChanges(), MONDAY_SYNC_TIMER_MS)
   }
 
-  // Interval ///////////////////////////////////////////////////////
+  private getChangeKey(itemId: string, title: string) {
+    return ` ${itemId}:${encodeURIComponent(title)}`
+  }
 
-  private async destageChanges(skipItemId?: string) {
+  private async destageChanges(skipChangeKey?: string) {
     const changes = await this.redis.getset(this.changesKey, '')
     if (changes) {
       await Promise.all(
@@ -76,11 +87,10 @@ export class MondayRedisService extends BaseConnector {
           .slice(1)
           .sort()
           .filter((e, i, a) => i === a.indexOf(e)) // unique
+          .filter((v) => v !== skipChangeKey)
           .map((change) => {
             const [itemId, title] = change.split(':')
-            if (skipItemId !== itemId) {
-              return this.destageOneChange(itemId, decodeURIComponent(title))
-            }
+            return this.destageOneChange(itemId, decodeURIComponent(title))
           }),
       )
     }
@@ -127,11 +137,11 @@ export class MondayRedisService extends BaseConnector {
     return board.items
   }
 
-  private getChangeKey(itemId: string, title: string) {
-    return ` ${itemId}:${encodeURIComponent(title)}`
-  }
-
-  private async updateColumnValue(itemId: string, title: string, update: Promise<any>) {
+  private async updateColumnValue(
+    itemId: string,
+    title: string,
+    update: Promise<any>,
+  ) {
     const change = this.getChangeKey(itemId, title)
     return Promise.all([update, this.redis.append(this.changesKey, change)])
   }
@@ -149,7 +159,11 @@ export class MondayRedisService extends BaseConnector {
         Object.values(items)
           .map((item) => [
             ...Object.keys(item).map((title) =>
-              this.redis.hset(this.keyForItem(item.id), title, this.serialize(item[title], title)),
+              this.redis.hset(
+                this.keyForItem(item.id),
+                title,
+                this.serialize(item[title], title),
+              ),
             ),
             this.redis.hset(this.namesKey, item.name, item.id),
           ])
@@ -181,7 +195,9 @@ export class MondayRedisService extends BaseConnector {
             columnTitle,
             this.serialize(value, columnTitle),
           )
-          await this.destageChanges(itemId)
+          await this.destageChanges(
+            this.getChangeKey(itemId, columnTitle).trim(),
+          )
         }
       },
     )
@@ -256,7 +272,11 @@ export class MondayRedisService extends BaseConnector {
     await this.updateColumnValue(
       itemId,
       title,
-      this.redis.hset(this.keyForItem(itemId), title, this.serialize(value, title)),
+      this.redis.hset(
+        this.keyForItem(itemId),
+        title,
+        this.serialize(value, title),
+      ),
     )
   }
 
