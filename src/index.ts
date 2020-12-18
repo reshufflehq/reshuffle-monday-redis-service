@@ -252,10 +252,7 @@ export class MondayRedisService extends BaseConnector {
   public async getBoardItemByName(name: string) {
     MondayRedisService.validateBoardName(name)
     const id = await this.redis.hget(this.namesKey, name)
-    if (!id) {
-      throw new Error(`Item not found: ${name}`)
-    }
-    return this.getBoardItemById(id)
+    return id && this.getBoardItemById(id)
   }
 
   // Set a new value for one column of a specific item.
