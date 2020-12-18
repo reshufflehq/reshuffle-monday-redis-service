@@ -1,5 +1,5 @@
 {
-  "name": "reshuffle-monday-redis-service",
+  "name": "@reshuffle/monday-redis-service",
   "version": "0.0.4",
   "description": "Reshuffle service for mirroring Monday to Redis",
   "main": "dist/index.js",
