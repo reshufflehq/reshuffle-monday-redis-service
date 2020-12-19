@@ -147,7 +147,7 @@ export class MondayRedisService extends BaseConnector {
     const change = this.getChangeKey(itemId, title)
     return Promise.all([
       update,
-      this.redis.append(' ' + this.changesKey, change),
+      this.redis.append(this.changesKey, ' ' + change),
     ])
   }
 
