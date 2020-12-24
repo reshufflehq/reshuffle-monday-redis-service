@@ -114,13 +114,16 @@ export class MondayRedisService extends BaseConnector {
 
   private serialize(value: any, title: string) {
     const json = JSON.stringify(value)
-    const secret = this.cipher && this.encryptedColumns[title]
-    return secret ? this.cipher!.encrypt(json) : json
+    return this.cipher && this.encryptedColumns[title]
+      ? this.cipher.encrypt(json)
+      : json
   }
 
   private deserialize(str: string, title: string) {
-    const secret = this.cipher && this.encryptedColumns[title]
-    const json = secret ? this.cipher!.decrypt(str) : str
+    const json =
+      this.cipher && this.encryptedColumns[title]
+        ? this.cipher.decrypt(str)
+        : str
     return JSON.parse(json)
   }
 
@@ -167,14 +170,14 @@ export class MondayRedisService extends BaseConnector {
   // Actions ////////////////////////////////////////////////////////
 
   // Initialize the Redis mirror for this board.
-  public async initialize() {
+  public async initialize(): Promise<MondayRedisService> {
     this.app.getLogger().info(`Initializing ${this.boardName} board`)
     const initialized = await this.redis.setnx(this.changesKey, '')
     if (initialized === 1) {
       this.app.getLogger().info(`Populating Redis mirror for ${this.boardName}`)
       const items = await this.getMondayBoardItems()
       await Promise.all(
-        Object.values(items).map((item) => this.createItemInRedis(item))
+        Object.values(items).map((item) => this.createItemInRedis(item)),
       )
     }
 
@@ -217,7 +220,10 @@ export class MondayRedisService extends BaseConnector {
   //
   // @return item object
   //
-  public async createItem(name: string, columnValues: Record<string, any>) {
+  public async createItem(
+    name: string,
+    columnValues: Record<string, any>,
+  ): Promise<MondayItem> {
     const boardId = await this.getBoardId()
     const columnUpdaters: Record<string, () => any> = {}
     for (const [title, value] of Object.entries(columnValues)) {
@@ -250,7 +256,9 @@ export class MondayRedisService extends BaseConnector {
   // @return an object with the item's id, name and column
   //         value (undefined if not found)
   //
-  public async getBoardItemById(itemId: string) {
+  public async getBoardItemById(
+    itemId: string,
+  ): Promise<MondayItem | undefined> {
     MondayRedisService.validateId(itemId)
 
     const raw = await this.redis.hgetall(this.keyForItem(itemId))
@@ -270,7 +278,9 @@ export class MondayRedisService extends BaseConnector {
   // @return an object with the item's id, name and column
   //         value (undefined if not found)
   //
-  public async getBoardItemByName(name: string) {
+  public async getBoardItemByName(
+    name: string,
+  ): Promise<MondayItem | undefined> {
     MondayRedisService.validateBoardName(name)
     const id = await this.redis.hget(this.namesKey, name)
     return id && this.getBoardItemById(id)
@@ -289,7 +299,12 @@ export class MondayRedisService extends BaseConnector {
   // @param title title of the Monday column to be updated
   // @param value new value
   //
-  public async setColumnValue(itemId: string, title: string, value: any) {
+  public async setColumnValue(
+    itemId: string,
+    title: string,
+    // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+    value: any,
+  ): Promise<void> {
     await this.updateColumnValue(
       itemId,
       title,
@@ -314,7 +329,11 @@ export class MondayRedisService extends BaseConnector {
   // @param title title of the Monday column to be updated
   // @param incr numeric increment (negative to decrement)
   //
-  public async incrColumnValue(itemId: string, title: string, incr = 1) {
+  public async incrColumnValue(
+    itemId: string,
+    title: string,
+    incr = 1,
+  ): Promise<void> {
     await this.updateColumnValue(
       itemId,
       title,
@@ -343,7 +362,7 @@ export class MondayRedisService extends BaseConnector {
   //
   // @return same item name
   //
-  public static validateBoardName(name: string) {
+  public static validateBoardName(name: string): string {
     if (typeof name !== 'string' || name.trim().length === 0) {
       throw new Error(`Invalid name: ${name}`)
     }
@@ -369,7 +388,7 @@ export async function createAndInitializeMondayRedisService(
   redis: RedisConnector,
   encryptionKey?: string,
   encryptedColumnList?: string[],
-) {
+): Promise<MondayRedisService> {
   const mrs = new MondayRedisService(app, {
     boardName,
     monday,

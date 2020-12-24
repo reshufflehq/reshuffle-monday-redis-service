@@ -47,7 +47,7 @@ export class Cipher {
   //
   // @return clear text string
   //
-  public decrypt(encoded: string) {
+  public decrypt(encoded: string): string {
     const { iv, ct } = JSON.parse(encoded)
     const ivb = Buffer.from(iv, 'hex')
     const decipher = crypto.createDecipheriv('aes256', this.key, ivb)
