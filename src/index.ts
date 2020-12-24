@@ -139,6 +139,19 @@ export class MondayRedisService extends BaseConnector {
     return board.items
   }
 
+  private async createItemInRedis(item: MondayItem): Promise<void> {
+    await Promise.all([
+      ...Object.keys(item).map((title) =>
+        this.redis.hset(
+          this.keyForItem(item.id),
+          title,
+          this.serialize(item[title], title),
+        ),
+      ),
+      this.redis.hset(this.namesKey, item.name, item.id),
+    ])
+  }
+
   private async updateColumnValue(
     itemId: string,
     title: string,
@@ -161,18 +174,7 @@ export class MondayRedisService extends BaseConnector {
       this.app.getLogger().info(`Populating Redis mirror for ${this.boardName}`)
       const items = await this.getMondayBoardItems()
       await Promise.all(
-        Object.values(items)
-          .map((item) => [
-            ...Object.keys(item).map((title) =>
-              this.redis.hset(
-                this.keyForItem(item.id),
-                title,
-                this.serialize(item[title], title),
-              ),
-            ),
-            this.redis.hset(this.namesKey, item.name, item.id),
-          ])
-          .flat(),
+        Object.values(items).map((item) => this.createItemInRedis(item))
       )
     }
 
@@ -206,6 +208,25 @@ export class MondayRedisService extends BaseConnector {
     )
 
     return this
+  }
+
+  // Create a new item in Monday and the Redis mirror.
+  //
+  // @param name item name
+  // @param columnValues values by column titles
+  //
+  // @return item object
+  //
+  public async createItem(name: string, columnValues: Record<string, any>) {
+    const boardId = await this.getBoardId()
+    const columnUpdaters: Record<string, () => any> = {}
+    for (const [title, value] of Object.entries(columnValues)) {
+      columnUpdaters[title] = () => value
+    }
+    const itemId = await this.monday.createItem(boardId, name, columnUpdaters)
+    const item = { id: itemId, name, ...columnValues }
+    await this.createItemInRedis(item)
+    return item
   }
 
   // Get the id of this board.
