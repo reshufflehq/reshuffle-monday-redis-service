@@ -11,6 +11,8 @@ const MONDAY_SYNC_TIMER_MS = parseInt(
   10,
 )
 
+const UNDEFINED_PLACEHOLDER = 'UNDEFINED'
+
 interface Options {
   boardName: string
   monday: MondayConnector
@@ -113,13 +115,20 @@ export class MondayRedisService extends BaseConnector {
   }
 
   private serialize(value: any, title: string) {
+    if (!value) {
+      return UNDEFINED_PLACEHOLDER
+    }
     const json = JSON.stringify(value)
     return this.cipher && this.encryptedColumns[title]
       ? this.cipher.encrypt(json)
       : json
   }
 
-  private deserialize(str: string, title: string) {
+  private deserialize(str: string | undefined, title: string) {
+    if (!str || str === UNDEFINED_PLACEHOLDER) {
+      return undefined
+    }
+
     const json =
       this.cipher && this.encryptedColumns[title]
         ? this.cipher.decrypt(str)
