@@ -11,7 +11,7 @@ const MONDAY_SYNC_TIMER_MS = parseInt(
   10,
 )
 
-const UNDEFINED_PLACEHOLDER = 'UNDEFINED'
+const UNDEFINED_NULL_PLACEHOLDER = 'UNDEFINED_OR_NULL'
 
 interface Options {
   boardName: string
@@ -103,9 +103,13 @@ export class MondayRedisService extends BaseConnector {
   private async destageOneChange(itemId: string, title: string) {
     const serial = await this.redis.hget(this.keyForItem(itemId), title)
     const value = this.deserialize(serial, title)
-    await this.monday.updateColumnValues(await this.getBoardId(), itemId, {
-      [title]: () => value,
-    })
+    if (title === 'name') {
+      await this.monday.updateItemName(await this.getBoardId(), itemId, value)
+    } else {
+      await this.monday.updateColumnValues(await this.getBoardId(), itemId, {
+        [title]: () => value,
+      })
+    }
   }
 
   // Helpers ////////////////////////////////////////////////////////
@@ -116,7 +120,7 @@ export class MondayRedisService extends BaseConnector {
 
   private serialize(value: any, title: string) {
     if (value === null || value === undefined) {
-      return UNDEFINED_PLACEHOLDER
+      return UNDEFINED_NULL_PLACEHOLDER
     }
     const json = JSON.stringify(value)
     return this.cipher && this.encryptedColumns[title]
@@ -125,7 +129,7 @@ export class MondayRedisService extends BaseConnector {
   }
 
   private deserialize(str: string | undefined, title: string) {
-    if (!str || str === UNDEFINED_PLACEHOLDER) {
+    if (!str || str === UNDEFINED_NULL_PLACEHOLDER) {
       return undefined
     }
 
@@ -197,22 +201,25 @@ export class MondayRedisService extends BaseConnector {
         boardId: this.boardId,
       },
       async (event) => {
-        const {
-          boardId,
-          itemId,
-          columnTitle,
-          value: { value },
-        } = event
+        const { boardId, itemId, columnTitle, value } = event
+
+        const newValue = value.hasOwnProperty('value')
+          ? value.value
+          : value.hasOwnProperty('linkedPulseIds')
+          ? { linkedPulseIds: value.linkedPulseIds }
+          : undefined
         if (this.boardId === parseInt(boardId, 10)) {
           this.app
             .getLogger()
             .info(
-              `Monday event received - Update Redis cache with ${value} for itemId ${itemId} (title: ${columnTitle})`,
+              `Monday event received - Update Redis cache with ${JSON.stringify(
+                newValue,
+              )} for itemId ${itemId} (title: ${columnTitle})`,
             )
           await this.redis.hset(
             this.keyForItem(itemId),
             columnTitle,
-            this.serialize(value, columnTitle),
+            this.serialize(newValue, columnTitle),
           )
           await this.destageChanges(this.getChangeKey(itemId, columnTitle))
         }
