@@ -258,6 +258,29 @@ export class MondayRedisService extends BaseConnector {
     return this.boardId
   }
 
+  // Get all items.
+  //
+  //
+  // @return an array of objects with the item's id, name and column
+  //         value (undefined if not found)
+  //
+  public async getBoardItems(): Promise<MondayItem[]> {
+    const ids: { [key: string]: string } = await this.redis.hgetall(
+      this.namesKey,
+    )
+
+    const items: MondayItem[] = []
+    if(ids) {
+      for (const id of Object.values(ids)) {
+        const item = await this.getBoardItemById(id)
+
+        item && items.push(item)
+      }
+    }
+
+    return items
+  }
+
   // Get an item with the specified id from this board.
   //
   // @param itemId item id
