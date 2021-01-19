@@ -115,7 +115,7 @@ export class MondayRedisService extends BaseConnector {
   }
 
   private serialize(value: any, title: string) {
-    if (!value) {
+    if (value === null || value === undefined) {
       return UNDEFINED_PLACEHOLDER
     }
     const json = JSON.stringify(value)
