@@ -277,7 +277,7 @@ export class MondayRedisService extends BaseConnector {
     )
 
     const items: MondayItem[] = []
-    if(ids) {
+    if (ids) {
       for (const id of Object.values(ids)) {
         const item = await this.getBoardItemById(id)
 
