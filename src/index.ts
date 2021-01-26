@@ -114,25 +114,28 @@ export class MondayRedisService extends BaseConnector {
         const existInMonday = mondayItemIds.includes(redisItemId)
         if (!existInMonday) {
           this.app
-              .getLogger()
-              .info(
-                  `Item ${redisItemId} removed from board ${this.boardName}, syncing Redis cache`,
-              )
+            .getLogger()
+            .info(
+              `Item ${redisItemId} removed from board ${this.boardName}, syncing Redis cache`,
+            )
           await this.deleteItemInRedis(redisItemId)
         }
       }
 
-      for(const mondayItemId of mondayItemIds) {
-        const exist = await this.redis.hexists(this.keyForItem(mondayItemId), 'id')
+      for (const mondayItemId of mondayItemIds) {
+        const exist = await this.redis.hexists(
+          this.keyForItem(mondayItemId),
+          'id',
+        )
         if (!exist) {
           this.app
-              .getLogger()
-              .info(
-                  `New item ${mondayItemId} detected in board ${this.boardName}, syncing Redis cache`,
-              )
+            .getLogger()
+            .info(
+              `New item ${mondayItemId} detected in board ${this.boardName}, syncing Redis cache`,
+            )
           const res = await this.monday.getItem(parseInt(mondayItemId, 10))
           const mondayItem =
-              res && res.items && res.items.length && res.items[0]
+            res && res.items && res.items.length && res.items[0]
           if (mondayItem) {
             await this.createItemInRedis({ id: mondayItemId, ...mondayItem })
           }
@@ -231,9 +234,7 @@ export class MondayRedisService extends BaseConnector {
     const item = await this.getBoardItemById(itemId)
     if (item) {
       await Promise.all([
-        ...Object.keys(item).map((title) =>
-          this.redis.hdel(this.keyForItem(item.id), title),
-        ),
+        this.redis.del(this.keyForItem(item.id)),
         this.redis.hdel(this.namesKey, item.name),
       ])
     }
