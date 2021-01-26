@@ -110,8 +110,12 @@ export class MondayRedisService extends BaseConnector {
       const mondayItemIds = await this.monday.getBoardItemIds(this.boardId)
       const redisItemIds = await this.getBoardItemIds()
 
-      const createdItems = mondayItemIds.filter(id => !redisItemIds.includes(id))
-      const deletedItems = redisItemIds.filter(id => !mondayItemIds.includes(id))
+      const createdItems = mondayItemIds.filter(
+        (id) => !redisItemIds.includes(id),
+      )
+      const deletedItems = redisItemIds.filter(
+        (id) => !mondayItemIds.includes(id),
+      )
 
       for (const deletedItemId of deletedItems) {
         const existInMonday = mondayItemIds.includes(deletedItemId)
@@ -179,8 +183,14 @@ export class MondayRedisService extends BaseConnector {
 
   // Helpers ////////////////////////////////////////////////////////
 
-  private keyForItem(itemId: string) {
-    return `${this.keyBase}/item/${itemId}`
+  private keyForItem(itemId?: string) {
+    // If the schema changes, you'll new to review the getBoardItemIds implementation
+    return `${this.keyBase}/item/${itemId || '*'}`
+  }
+
+  private async getBoardItemIds(): Promise<string[]> {
+    const keys = await this.redis.keys(this.keyForItem())
+    return keys.map((key) => key.substr(key.lastIndexOf('/') + 1))
   }
 
   private serialize(value: any, title: string) {
@@ -361,16 +371,6 @@ export class MondayRedisService extends BaseConnector {
       }
     }
     return this.boardId
-  }
-
-  // Get all item ids.
-  //
-  //
-  // @return an array of item's id
-  public async getBoardItemIds(): Promise<string[]> {
-    const keys = await this.redis.keys(`${this.keyBase}/item/*`)
-
-    return keys.map(key => key.substr(key.lastIndexOf('/') + 1))
   }
 
   // Get all items.
