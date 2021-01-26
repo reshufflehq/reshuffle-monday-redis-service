@@ -32,6 +32,8 @@ export class MondayRedisService extends BaseConnector {
   private readonly changesKey: string
   private readonly cipher?: Cipher
   private encryptedColumns: Record<string, boolean> = {}
+  private destageIntervalID: NodeJS.Timer | null = null
+  private mondaySyncIntervalID: NodeJS.Timer | null = null
 
   constructor(app: Reshuffle, options: Options, id?: string) {
     super(app, options, id)
@@ -73,13 +75,70 @@ export class MondayRedisService extends BaseConnector {
       this.cipher = new Cipher(options.encryptionKey)
     }
 
-    setInterval(() => this.destageChanges(), MONDAY_SYNC_TIMER_MS)
+    this.resetDestageInterval()
+    this.resetMondaySync()
   }
 
-  // Interval ///////////////////////////////////////////////////////
+  private resetDestageInterval() {
+    if (this.destageIntervalID) {
+      clearInterval(this.destageIntervalID)
+    }
+
+    this.destageIntervalID = setInterval(
+      async () => await this.destageChanges(),
+      MONDAY_SYNC_TIMER_MS,
+    )
+  }
+
+  private resetMondaySync() {
+    if (this.mondaySyncIntervalID) {
+      clearInterval(this.mondaySyncIntervalID)
+    }
+
+    this.mondaySyncIntervalID = setInterval(
+      async () => await this.syncBoardItemAdditionDeletion(),
+      MONDAY_SYNC_TIMER_MS * 5,
+    )
+  }
 
   private getChangeKey(itemId: string, title: string) {
     return `${itemId}:${encodeURIComponent(title)}`
+  }
+
+  private async syncBoardItemAdditionDeletion() {
+    if (this.boardId) {
+      const mondayItemIds = await this.monday.getBoardItemIds(this.boardId)
+      const redisItemIds = await this.getBoardItemIds()
+
+      for (const redisItemId of redisItemIds) {
+        const existInMonday = mondayItemIds.includes(redisItemId)
+        if (!existInMonday) {
+          this.app
+              .getLogger()
+              .info(
+                  `Item ${redisItemId} removed from board ${this.boardName}, syncing Redis cache`,
+              )
+          await this.deleteItemInRedis(redisItemId)
+        }
+      }
+
+      for(const mondayItemId of mondayItemIds) {
+        const exist = await this.redis.hexists(this.keyForItem(mondayItemId), 'id')
+        if (!exist) {
+          this.app
+              .getLogger()
+              .info(
+                  `New item ${mondayItemId} detected in board ${this.boardName}, syncing Redis cache`,
+              )
+          const res = await this.monday.getItem(parseInt(mondayItemId, 10))
+          const mondayItem =
+              res && res.items && res.items.length && res.items[0]
+          if (mondayItem) {
+            await this.createItemInRedis({ id: mondayItemId, ...mondayItem })
+          }
+        }
+      }
+    }
   }
 
   private async destageChanges(skipChangeKey?: string) {
@@ -168,6 +227,18 @@ export class MondayRedisService extends BaseConnector {
     ])
   }
 
+  private async deleteItemInRedis(itemId: string): Promise<void> {
+    const item = await this.getBoardItemById(itemId)
+    if (item) {
+      await Promise.all([
+        ...Object.keys(item).map((title) =>
+          this.redis.hdel(this.keyForItem(item.id), title),
+        ),
+        this.redis.hdel(this.namesKey, item.name),
+      ])
+    }
+  }
+
   private async updateColumnValue(
     itemId: string,
     title: string,
@@ -179,8 +250,6 @@ export class MondayRedisService extends BaseConnector {
       this.redis.append(this.changesKey, ' ' + change),
     ])
   }
-
-  // Actions ////////////////////////////////////////////////////////
 
   // Initialize the Redis mirror for this board.
   public async initialize(): Promise<MondayRedisService> {
@@ -221,7 +290,32 @@ export class MondayRedisService extends BaseConnector {
             columnTitle,
             this.serialize(newValue, columnTitle),
           )
+
+          this.resetMondaySync()
           await this.destageChanges(this.getChangeKey(itemId, columnTitle))
+        }
+      },
+    )
+
+    this.monday.on(
+      {
+        type: 'CreateItem',
+        boardId: this.boardId,
+      },
+      async (event) => {
+        const { boardId, itemId, itemName } = event
+
+        if (this.boardId === parseInt(boardId, 10)) {
+          this.app
+            .getLogger()
+            .info(
+              `Monday event received - Create new item in Redis cache (itemId: ${itemId}, itemName: ${itemName})`,
+            )
+          const response = await this.monday.getItem(parseInt(itemId, 10))
+          if (response && response.items && response.items[0]) {
+            this.resetMondaySync()
+            await this.createItemInRedis({ id: itemId, ...response.items[0] })
+          }
         }
       },
     )
@@ -263,6 +357,16 @@ export class MondayRedisService extends BaseConnector {
       }
     }
     return this.boardId
+  }
+
+  // Get all item ids.
+  //
+  //
+  // @return an array of item's id
+  public async getBoardItemIds(): Promise<string[]> {
+    const ids = await this.redis.hgetall(this.namesKey)
+
+    return Object.values(ids)
   }
 
   // Get all items.
