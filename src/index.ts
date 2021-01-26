@@ -471,6 +471,13 @@ export class MondayRedisService extends BaseConnector {
     )
   }
 
+  public async setItemName(itemId, name: string): Promise<void> {
+    const item = await this.getBoardItemById(itemId)
+    this.setColumnValue(itemId, 'name', name)
+    item && this.redis.hdel(this.namesKey, item.name)
+    this.redis.hset(this.namesKey, name, itemId)
+
+  }
   // Increase (or decrease) the value for one column of a specific
   // item. The column must have a numeric value and must not be
   // encrypted.
