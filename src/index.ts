@@ -284,13 +284,21 @@ export class MondayRedisService extends BaseConnector {
         boardId: this.boardId,
       },
       async (event) => {
-        const { boardId, itemId, columnTitle, value } = event
+        const { boardId, itemId, columnTitle, columnType, value } = event
 
-        const newValue = value.hasOwnProperty('value')
+        let newValue = value.hasOwnProperty('value')
           ? value.value
           : value.hasOwnProperty('linkedPulseIds')
           ? { linkedPulseIds: value.linkedPulseIds }
           : undefined
+
+        if (columnType === 'location') {
+          const res = await this.monday.getItem(parseInt(itemId, 10))
+          const mondayItem =
+            res && res.items && res.items.length && res.items[0]
+          newValue = mondayItem?.Location
+        }
+
         if (this.boardId === parseInt(boardId, 10)) {
           this.app
             .getLogger()
@@ -463,6 +471,14 @@ export class MondayRedisService extends BaseConnector {
     )
   }
 
+  public async setItemName(itemId, name: string): Promise<void> {
+    const item = await this.getBoardItemById(itemId)
+    await this.setColumnValue(itemId, 'name', name)
+    if (item) {
+      await this.redis.hdel(this.namesKey, item.name)
+    }
+    await this.redis.hset(this.namesKey, name, itemId)
+  }
   // Increase (or decrease) the value for one column of a specific
   // item. The column must have a numeric value and must not be
   // encrypted.
