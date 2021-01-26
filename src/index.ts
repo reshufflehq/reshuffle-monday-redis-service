@@ -110,34 +110,37 @@ export class MondayRedisService extends BaseConnector {
       const mondayItemIds = await this.monday.getBoardItemIds(this.boardId)
       const redisItemIds = await this.getBoardItemIds()
 
-      for (const redisItemId of redisItemIds) {
-        const existInMonday = mondayItemIds.includes(redisItemId)
+      const createdItems = mondayItemIds.filter(id => !redisItemIds.includes(id))
+      const deletedItems = redisItemIds.filter(id => !mondayItemIds.includes(id))
+
+      for (const deletedItemId of deletedItems) {
+        const existInMonday = mondayItemIds.includes(deletedItemId)
         if (!existInMonday) {
           this.app
             .getLogger()
             .info(
-              `Item ${redisItemId} removed from board ${this.boardName}, syncing Redis cache`,
+              `Item ${deletedItemId} removed from board ${this.boardName}, syncing Redis cache`,
             )
-          await this.deleteItemInRedis(redisItemId)
+          await this.deleteItemInRedis(deletedItemId)
         }
       }
 
-      for (const mondayItemId of mondayItemIds) {
+      for (const createdItemId of createdItems) {
         const exist = await this.redis.hexists(
-          this.keyForItem(mondayItemId),
+          this.keyForItem(createdItemId),
           'id',
         )
         if (!exist) {
           this.app
             .getLogger()
             .info(
-              `New item ${mondayItemId} detected in board ${this.boardName}, syncing Redis cache`,
+              `New item ${createdItemId} detected in board ${this.boardName}, syncing Redis cache`,
             )
-          const res = await this.monday.getItem(parseInt(mondayItemId, 10))
+          const res = await this.monday.getItem(parseInt(createdItemId, 10))
           const mondayItem =
             res && res.items && res.items.length && res.items[0]
           if (mondayItem) {
-            await this.createItemInRedis({ id: mondayItemId, ...mondayItem })
+            await this.createItemInRedis({ id: createdItemId, ...mondayItem })
           }
         }
       }
@@ -365,9 +368,9 @@ export class MondayRedisService extends BaseConnector {
   //
   // @return an array of item's id
   public async getBoardItemIds(): Promise<string[]> {
-    const ids = await this.redis.hgetall(this.namesKey)
+    const keys = await this.redis.keys(`${this.keyBase}/item/*`)
 
-    return Object.values(ids)
+    return keys.map(key => key.substr(key.lastIndexOf('/') + 1))
   }
 
   // Get all items.
