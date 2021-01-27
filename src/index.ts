@@ -90,7 +90,8 @@ export class MondayRedisService extends BaseConnector {
     )
   }
 
-  private resetMondaySync() {
+  private resetMondaySync
+  () {
     if (this.mondaySyncIntervalID) {
       clearInterval(this.mondaySyncIntervalID)
     }
@@ -286,11 +287,14 @@ export class MondayRedisService extends BaseConnector {
       async (event) => {
         const { boardId, itemId, columnTitle, columnType, value } = event
 
-        let newValue = value.hasOwnProperty('value')
-          ? value.value
-          : value.hasOwnProperty('linkedPulseIds')
-          ? { linkedPulseIds: value.linkedPulseIds }
-          : undefined
+        let newValue =
+          value === undefined || value === null
+            ? value
+            : value.hasOwnProperty('value')
+            ? value.value
+            : value.hasOwnProperty('linkedPulseIds')
+            ? { linkedPulseIds: value.linkedPulseIds }
+            : undefined
 
         if (columnType === 'location') {
           const res = await this.monday.getItem(parseInt(itemId, 10))
