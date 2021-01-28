@@ -392,13 +392,11 @@ export class MondayRedisService extends BaseConnector {
   //         value (undefined if not found)
   //
   public async getBoardItems(): Promise<MondayItem[]> {
-    const ids: { [key: string]: string } = await this.redis.hgetall(
-      this.namesKey,
-    )
+    const ids = await this.getBoardItemIds()
 
     const items: MondayItem[] = []
     if (ids) {
-      for (const id of Object.values(ids)) {
+      for (const id of ids) {
         const item = await this.getBoardItemById(id)
 
         item && items.push(item)
