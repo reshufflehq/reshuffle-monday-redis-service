@@ -293,13 +293,17 @@ export class MondayRedisService extends BaseConnector {
             const mondayItem =
               res && res.items && res.items.length && res.items[0]
             newValue = mondayItem?.Location
+            break
           case 'color':
             newValue = value.label && value.label.text
+            break
           case 'board-relation':
             newValue = { linkedPulseIds: value.linkedPulseIds }
+            break
           case 'text':
           case 'numeric':
             newValue = value.value
+            break
           default:
             newValue = value
         }
