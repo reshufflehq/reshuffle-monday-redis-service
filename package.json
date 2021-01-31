@@ -35,7 +35,7 @@
   "license": "MIT",
   "dependencies": {
     "reshuffle-base-connector": "0.0.11",
-    "reshuffle-monday-connector": "^0.0.14",
+    "reshuffle-monday-connector": "^0.0.15",
     "reshuffle-redis-connector": "^0.0.1"
   },
   "devDependencies": {

@@ -90,8 +90,7 @@ export class MondayRedisService extends BaseConnector {
     )
   }
 
-  private resetMondaySync
-  () {
+  private resetMondaySync() {
     if (this.mondaySyncIntervalID) {
       clearInterval(this.mondaySyncIntervalID)
     }
@@ -287,20 +286,22 @@ export class MondayRedisService extends BaseConnector {
       async (event) => {
         const { boardId, itemId, columnTitle, columnType, value } = event
 
-        let newValue =
-          value === undefined || value === null
-            ? value
-            : value.hasOwnProperty('value')
-            ? value.value
-            : value.hasOwnProperty('linkedPulseIds')
-            ? { linkedPulseIds: value.linkedPulseIds }
-            : undefined
-
-        if (columnType === 'location') {
-          const res = await this.monday.getItem(parseInt(itemId, 10))
-          const mondayItem =
-            res && res.items && res.items.length && res.items[0]
-          newValue = mondayItem?.Location
+        let newValue
+        switch (columnType) {
+          case 'location':
+            const res = await this.monday.getItem(parseInt(itemId, 10))
+            const mondayItem =
+              res && res.items && res.items.length && res.items[0]
+            newValue = mondayItem?.Location
+          case 'color':
+            newValue = value.label && value.label.text
+          case 'board-relation':
+            newValue = { linkedPulseIds: value.linkedPulseIds }
+          case 'text':
+          case 'numeric':
+            newValue = value.value
+          default:
+            newValue = value
         }
 
         if (this.boardId === parseInt(boardId, 10)) {
