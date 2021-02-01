@@ -304,6 +304,9 @@ export class MondayRedisService extends BaseConnector {
           case 'numeric':
             newValue = value ? value.value : value
             break
+          case 'dropdown':
+            newValue = value.chosenValues
+            break
           default:
             newValue = value
         }
