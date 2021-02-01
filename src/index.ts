@@ -302,7 +302,7 @@ export class MondayRedisService extends BaseConnector {
             break
           case 'text':
           case 'numeric':
-            newValue = value.value
+            newValue = value ? value.value : value
             break
           default:
             newValue = value
