@@ -295,7 +295,7 @@ export class MondayRedisService extends BaseConnector {
             newValue = mondayItem?.Location
             break
           case 'color':
-            newValue = value.label && value.label.text
+            newValue = value.label
             break
           case 'board-relation':
             newValue = { linkedPulseIds: value.linkedPulseIds }
