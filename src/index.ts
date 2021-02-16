@@ -19,6 +19,7 @@ interface Options {
   redis: RedisConnector
   encryptionKey?: string
   encryptedColumnList?: string[]
+  apiUserIdsToIgnoreOnNewEvent?: string[]
 }
 
 export class MondayRedisService extends BaseConnector {
@@ -284,7 +285,15 @@ export class MondayRedisService extends BaseConnector {
         boardId: this.boardId,
       },
       async (event) => {
-        const { boardId, itemId, columnTitle, columnType, value } = event
+        const { boardId, itemId, columnTitle, columnType, value, userId } = event
+
+        if (this.configOptions.apiUserIdsToIgnoreOnNewEvent && this.configOptions.apiUserIdsToIgnoreOnNewEvent.includes(userId)) {
+          this.app
+              .getLogger()
+              .info(
+                  `Monday event received - skip changes from user: ${userId} (listed in configOptions.apiUserIdsToIgnoreOnNewEvent)`)
+          return
+        }
 
         let newValue
         switch (columnType) {
@@ -337,7 +346,15 @@ export class MondayRedisService extends BaseConnector {
         boardId: this.boardId,
       },
       async (event) => {
-        const { boardId, itemId, itemName } = event
+        const { boardId, itemId, itemName, userId } = event
+
+        if (this.configOptions.apiUserIdsToIgnoreOnNewEvent && this.configOptions.apiUserIdsToIgnoreOnNewEvent.includes(userId)) {
+          this.app
+              .getLogger()
+              .info(
+                  `Monday event received - skip changes from user: ${userId} (listed in configOptions.apiUserIdsToIgnoreOnNewEvent)`)
+          return
+        }
 
         if (this.boardId === parseInt(boardId, 10)) {
           this.app
@@ -561,6 +578,7 @@ export async function createAndInitializeMondayRedisService(
   redis: RedisConnector,
   encryptionKey?: string,
   encryptedColumnList?: string[],
+  apiUserIdsToIgnoreOnNewEvent?: string[],
 ): Promise<MondayRedisService> {
   const mrs = new MondayRedisService(app, {
     boardName,
@@ -568,6 +586,7 @@ export async function createAndInitializeMondayRedisService(
     redis,
     encryptionKey,
     encryptedColumnList,
+    apiUserIdsToIgnoreOnNewEvent,
   })
   return mrs.initialize()
 }
