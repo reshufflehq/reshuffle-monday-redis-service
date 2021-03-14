@@ -285,13 +285,24 @@ export class MondayRedisService extends BaseConnector {
         boardId: this.boardId,
       },
       async (event) => {
-        const { boardId, itemId, columnTitle, columnType, value, userId } = event
+        const {
+          boardId,
+          itemId,
+          columnTitle,
+          columnType,
+          value,
+          userId,
+        } = event
 
-        if (this.configOptions.apiUserIdsToIgnoreOnNewEvent && this.configOptions.apiUserIdsToIgnoreOnNewEvent.includes(userId)) {
+        if (
+          this.configOptions.apiUserIdsToIgnoreOnNewEvent &&
+          this.configOptions.apiUserIdsToIgnoreOnNewEvent.includes(userId)
+        ) {
           this.app
-              .getLogger()
-              .info(
-                  `Monday event received - skip changes from user: ${userId} (listed in configOptions.apiUserIdsToIgnoreOnNewEvent)`)
+            .getLogger()
+            .info(
+              `Monday event received - skip changes from user: ${userId} (listed in configOptions.apiUserIdsToIgnoreOnNewEvent)`,
+            )
           return
         }
 
@@ -314,7 +325,7 @@ export class MondayRedisService extends BaseConnector {
             newValue = value ? value.value : value
             break
           case 'dropdown':
-            newValue = value.chosenValues
+            newValue = value ? value.chosenValues : value
             break
           default:
             newValue = value
@@ -348,11 +359,15 @@ export class MondayRedisService extends BaseConnector {
       async (event) => {
         const { boardId, itemId, itemName, userId } = event
 
-        if (this.configOptions.apiUserIdsToIgnoreOnNewEvent && this.configOptions.apiUserIdsToIgnoreOnNewEvent.includes(userId)) {
+        if (
+          this.configOptions.apiUserIdsToIgnoreOnNewEvent &&
+          this.configOptions.apiUserIdsToIgnoreOnNewEvent.includes(userId)
+        ) {
           this.app
-              .getLogger()
-              .info(
-                  `Monday event received - skip changes from user: ${userId} (listed in configOptions.apiUserIdsToIgnoreOnNewEvent)`)
+            .getLogger()
+            .info(
+              `Monday event received - skip changes from user: ${userId} (listed in configOptions.apiUserIdsToIgnoreOnNewEvent)`,
+            )
           return
         }
 
