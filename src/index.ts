@@ -353,6 +353,40 @@ export class MondayRedisService extends BaseConnector {
 
     this.monday.on(
       {
+        type: 'UpdateName',
+        boardId: this.boardId,
+      },
+      async (event) => {
+        const { boardId, itemId, previousValue, value, userId } = event
+
+        if (
+          this.configOptions.apiUserIdsToIgnoreOnNewEvent &&
+          this.configOptions.apiUserIdsToIgnoreOnNewEvent.includes(userId)
+        ) {
+          this.app
+            .getLogger()
+            .info(
+              `Monday event received - skip changes from user: ${userId} (listed in configOptions.apiUserIdsToIgnoreOnNewEvent)`,
+            )
+          return
+        }
+
+        if (
+          this.boardId === parseInt(boardId, 10) &&
+          typeof value.name === 'string'
+        ) {
+          this.app
+            .getLogger()
+            .info(
+              `Monday event received - Update item name in Redis cache (itemId: ${itemId}, previousName: ${previousValue.name}, itemName: ${value.name})`,
+            )
+          await this.setItemName(itemId, value.name)
+        }
+      },
+    )
+
+    this.monday.on(
+      {
         type: 'CreateItem',
         boardId: this.boardId,
       },
