@@ -451,7 +451,15 @@ export class MondayRedisService extends BaseConnector {
   //
   public async getBoardId(): Promise<number> {
     if (!this.boardId) {
-      this.boardId = await this.monday.getBoardIdByName(this.boardName)
+      const BoardIdInRedis = await this.redis.get(`boards/${this.boardName}`)
+
+      if (BoardIdInRedis) {
+        this.boardId = BoardIdInRedis
+      } else {
+        this.boardId = await this.monday.getBoardIdByName(this.boardName)
+        await this.redis.set(`boards/${this.boardName}`, this.boardId)
+      }
+
       if (!this.boardId) {
         throw new Error(`Monday board not found: ${this.boardName}`)
       }
@@ -547,7 +555,7 @@ export class MondayRedisService extends BaseConnector {
     )
   }
 
-  public async setItemName(itemId, name: string): Promise<void> {
+  public async setItemName(itemId: string, name: string): Promise<void> {
     const item = await this.getBoardItemById(itemId)
     await this.setColumnValue(itemId, 'name', name)
     if (item) {
