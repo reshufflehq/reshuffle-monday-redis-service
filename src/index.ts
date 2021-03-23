@@ -337,7 +337,7 @@ export class MondayRedisService extends BaseConnector {
             .info(
               `Monday event received - Update Redis cache with ${JSON.stringify(
                 newValue,
-              )} for itemId ${itemId} (title: ${columnTitle})`,
+              )} for itemId ${itemId} (columnTitle: ${columnTitle})`,
             )
           await this.redis.hset(
             this.keyForItem(itemId),
@@ -454,10 +454,12 @@ export class MondayRedisService extends BaseConnector {
       const BoardIdInRedis = await this.redis.get(`boards/${this.boardName}`)
 
       if (BoardIdInRedis) {
-        this.boardId = BoardIdInRedis
+        this.boardId = parseInt(BoardIdInRedis, 10)
       } else {
         this.boardId = await this.monday.getBoardIdByName(this.boardName)
-        await this.redis.set(`boards/${this.boardName}`, this.boardId)
+        if (this.boardId) {
+          await this.redis.set(`boards/${this.boardName}`, this.boardId)
+        }
       }
 
       if (!this.boardId) {
