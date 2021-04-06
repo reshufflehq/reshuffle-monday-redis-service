@@ -2,9 +2,12 @@ import { RedisConnector } from 'reshuffle-redis-connector'
 import { MondayConnector } from 'reshuffle-monday-connector'
 import { BaseConnector, Reshuffle } from 'reshuffle-base-connector'
 import { Cipher } from './Cipher'
-
-type MondayItem = Record<string, any>
-type MondayBoardItems = Record<string, MondayItem>
+import {
+  GROUP_ID_COLUMN,
+  MondayItem,
+  MondayHelper,
+  MondayGroupIdTitle,
+} from './mondayHelper'
 
 const MONDAY_SYNC_TIMER_MS = parseInt(
   process.env.MONDAY_SYNC_TIMER_MS || '5000',
@@ -27,6 +30,7 @@ export class MondayRedisService extends BaseConnector {
   public readonly monday: MondayConnector
   public readonly redis: RedisConnector
 
+  private readonly mondayHelper: MondayHelper
   private boardId?: number
   private readonly keyBase: string
   private readonly namesKey: string
@@ -35,6 +39,7 @@ export class MondayRedisService extends BaseConnector {
   private encryptedColumns: Record<string, boolean> = {}
   private destageIntervalID: NodeJS.Timer | null = null
   private mondaySyncIntervalID: NodeJS.Timer | null = null
+  private groups?: MondayGroupIdTitle[]
 
   constructor(app: Reshuffle, options: Options, id?: string) {
     super(app, options, id)
@@ -51,6 +56,7 @@ export class MondayRedisService extends BaseConnector {
       throw new Error(`Not a monday connector: ${options.monday}`)
     }
     this.monday = options.monday
+    this.mondayHelper = new MondayHelper(this.monday)
 
     if (
       typeof options.redis !== 'object' ||
@@ -141,9 +147,9 @@ export class MondayRedisService extends BaseConnector {
             .info(
               `New item ${createdItemId} detected in board ${this.boardName}, syncing Redis cache`,
             )
-          const res = await this.monday.getItem(parseInt(createdItemId, 10))
-          const mondayItem =
-            res && res.items && res.items.length && res.items[0]
+          const mondayItem = await this.mondayHelper.getBoardItem(
+            parseInt(createdItemId, 10),
+          )
           if (mondayItem) {
             await this.createItemInRedis({ id: createdItemId, ...mondayItem })
           }
@@ -175,6 +181,8 @@ export class MondayRedisService extends BaseConnector {
     const value = this.deserialize(serial, title)
     if (title === 'name') {
       await this.monday.updateItemName(await this.getBoardId(), itemId, value)
+    } else if (title === GROUP_ID_COLUMN) {
+      await this.mondayHelper.updateItemGroup(parseInt(itemId, 10), value)
     } else {
       await this.monday.updateColumnValues(await this.getBoardId(), itemId, {
         [title]: () => value,
@@ -216,12 +224,12 @@ export class MondayRedisService extends BaseConnector {
     return JSON.parse(json)
   }
 
-  private async getMondayBoardItems(): Promise<MondayBoardItems> {
-    let board = await this.monday.getBoardItems(await this.getBoardId())
+  private async getMondayBoardItems(): Promise<MondayItem[]> {
+    let board = await this.mondayHelper.getBoardItems(await this.getBoardId())
 
     if (!board || board.name !== this.boardName) {
       this.boardId = undefined
-      board = await this.monday.getBoardItems(await this.getBoardId())
+      board = await this.mondayHelper.getBoardItems(await this.getBoardId())
     }
 
     if (!board || board.name !== this.boardName) {
@@ -269,6 +277,7 @@ export class MondayRedisService extends BaseConnector {
   // Initialize the Redis mirror for this board.
   public async initialize(): Promise<MondayRedisService> {
     this.app.getLogger().info(`Initializing ${this.boardName} board`)
+
     const initialized = await this.redis.setnx(this.changesKey, '')
     if (initialized === 1) {
       this.app.getLogger().info(`Populating Redis mirror for ${this.boardName}`)
@@ -279,6 +288,14 @@ export class MondayRedisService extends BaseConnector {
     }
 
     this.boardId = await this.getBoardId()
+
+    this.app.getLogger().info(`Loading groups for ${this.boardName} board`)
+    this.groups = await this.mondayHelper.getBoardGroups(this.boardId)
+
+    this.app
+      .getLogger()
+      .info(`Adding event handlers for ${this.boardName} board`)
+
     this.monday.on(
       {
         type: 'ChangeColumnValue',
@@ -309,9 +326,9 @@ export class MondayRedisService extends BaseConnector {
         let newValue
         switch (columnType) {
           case 'location':
-            const res = await this.monday.getItem(parseInt(itemId, 10))
-            const mondayItem =
-              res && res.items && res.items.length && res.items[0]
+            const mondayItem = await this.mondayHelper.getBoardItem(
+              parseInt(itemId, 10),
+            )
             newValue = mondayItem?.Location
             break
           case 'color':
@@ -411,10 +428,12 @@ export class MondayRedisService extends BaseConnector {
             .info(
               `Monday event received - Create new item in Redis cache (itemId: ${itemId}, itemName: ${itemName})`,
             )
-          const response = await this.monday.getItem(parseInt(itemId, 10))
-          if (response && response.items && response.items[0]) {
+          const mondayItem = await this.mondayHelper.getBoardItem(
+            parseInt(itemId, 10),
+          )
+          if (mondayItem) {
             this.resetMondaySync()
-            await this.createItemInRedis({ id: itemId, ...response.items[0] })
+            await this.createItemInRedis({ id: itemId, ...mondayItem })
           }
         }
       },
@@ -439,8 +458,12 @@ export class MondayRedisService extends BaseConnector {
     for (const [title, value] of Object.entries(columnValues)) {
       columnUpdaters[title] = () => value
     }
-    const itemId = await this.monday.createItem(boardId, name, columnUpdaters)
-    const item = { id: itemId, name, ...columnValues }
+    const [itemId, _groupId] = await this.mondayHelper.createItem(
+      boardId,
+      name,
+      columnUpdaters,
+    )
+    const item = { id: itemId, name, _groupId, ...columnValues }
     await this.createItemInRedis(item)
     return item
   }
@@ -565,6 +588,30 @@ export class MondayRedisService extends BaseConnector {
     }
     await this.redis.hset(this.namesKey, name, itemId)
   }
+
+  public async setItemGroupTitle(
+    itemId: string,
+    groupTitle: string,
+  ): Promise<void> {
+    // lookup the groupId for the groupTitle
+    let groupId: string | undefined = undefined
+    if (this.groups) {
+      for (const pair of this.groups) {
+        if (groupTitle === pair[1]) {
+          groupId = pair[0]
+          break
+        }
+      }
+    }
+    if (groupId) {
+      await this.setColumnValue(itemId, GROUP_ID_COLUMN, groupId)
+    } else {
+      throw new Error(
+        `Group ID for group named "${groupTitle}" not found on ${this.boardName} board`,
+      )
+    }
+  }
+
   // Increase (or decrease) the value for one column of a specific
   // item. The column must have a numeric value and must not be
   // encrypted.
